@@ -1,251 +1,217 @@
 # Criminal Sketch Platform Architecture
 
 ## Objective
-Design a microservices-friendly backend around a simple Flask application so eyewitness input, sketch generation, and forensic post-processing can scale independently without auth or database complexity.
+Build a secure, case-based criminal sketch platform using the existing Python Flask + Streamlit stack with Supabase Authentication, Supabase Database, and Supabase Storage.
 
-## Current Core Runtime
-- Primary app: Flask edge app in `backend/edge_api/app.py`
-- Runtime mode:
-  - API/web mode: `python main.py --serve` (runs on port 5000)
-  - CLI mode: `python main.py --description "..."`
-- Key dependencies from `requirements.txt`:
-  - compel
-  - opencv-python
-  - numpy
-  - pillow
-  - boto3
-  - transformers
+## Core Principles
+- All business endpoints require authentication.
+- Each case is isolated by owner and case ID.
+- All generated and refined sketches are versioned.
+- Supabase Database and Supabase Storage are the source of truth.
+- Frontend and backend are deployed as separate services on Render.
 
-## Proposed Microservices Layout
+## System Components
 
-### 1) API Gateway / Web App (Flask Edge)
+### 1. Authentication Layer (Supabase Auth)
 Responsibilities:
-- Serve API endpoints for frontend clients
-- Request validation and routing to downstream services
-- API response contract for frontend/mobile clients
+- User signup and login with email/password
+- JWT-based sessions
+- Password reset flow
+- User metadata retrieval and role checks
 
-Frontend choice:
-- Simple Streamlit app at `frontend/streamlit_app.py`
-- Streamlit calls Flask endpoint `POST /generate-image-api`
+Auth Rules:
+- Public endpoint: health only
+- Protected endpoints: all case, sketch, and refinement APIs
+- Every protected request must include a valid bearer token
 
-Routes currently in edge app:
-- `POST /generate-image-api`
-- `POST /generate-batch-api`
-- `POST /generate-forensic-api`
+### 2. Database Layer (Supabase Postgres)
+Stores all business entities and relationships.
 
+Tables:
+- users
+  - id UUID primary key
+  - email TEXT
+  - created_at TIMESTAMP
+- cases
+  - case_id TEXT primary key
+  - user_id UUID references users(id)
+  - title TEXT
+  - description TEXT
+  - created_at TIMESTAMP default now()
+- sketches
+  - sketch_id TEXT primary key
+  - case_id TEXT references cases(case_id)
+  - image_url TEXT
+  - version INT
+  - created_at TIMESTAMP default now()
+- refinements
+  - refine_id TEXT primary key
+  - case_id TEXT references cases(case_id)
+  - attribute_type TEXT
+  - description TEXT
+  - x_coord FLOAT
+  - y_coord FLOAT
+  - created_at TIMESTAMP default now()
 
-Future role:
-- Keep this as orchestrator while moving heavy logic to internal services.
+Recommended indexing:
+- cases(user_id, created_at)
+- sketches(case_id, created_at)
+- refinements(case_id, created_at)
 
-### 2) Prompt Service
+### 3. Storage Layer (Supabase Storage)
+Stores generated and refined image assets.
+
+Bucket strategy:
+- private bucket recommended for investigative data
+- signed URLs served to authenticated clients
+
+Object path strategy:
+- cases/{case_id}/sketches/sketch_{version}.png
+- cases/{case_id}/refinements/refine_{version}.png
+
+### 4. API Gateway Layer (Flask)
+Main API app in backend/edge_api/app.py.
+
 Responsibilities:
-- Parse witness description into attributes
-- Build positive/negative prompts
-- Apply weighting rules and safety constraints
-- Optional LLM prompt cleanup (Groq) before generation
+- Route handling
+- Request validation
+- Auth enforcement
+- Supabase DB + Storage orchestration
+- Adapter calls for generation and optional transcription
 
-Inputs:
-- Free text description and/or structured attributes
+### 5. Generation and Refinement Services
+Generation:
+- Uses Hugging Face adapter in backend/adapters/provider_hf.py
 
-Outputs:
-- `prompt`
-- `negative_prompt`
-- extracted `attributes`
+Refinement:
+- Applies treatment metadata and regeneration pipeline
+- Supported attributes:
+  - scars
+  - birthmarks
+  - moles
+  - tattoos
+  - injuries
+  - skin texture
+  - eye traits
+  - mouth adjustments
+  - nose adjustments
+  - hairline patterns
+  - free-form facial descriptors
 
-Why separate:
-- Prompt behavior evolves fast; this should be deployable without touching image runtime.
+## API Endpoints
 
-### 3) Image Generation Service
-Responsibilities:
-- Run text-to-image generation (local model now, HF API later)
-- Enforce generation caps (steps, size, seed handling)
-- Return normalized portrait/sketch payload
+### Public
+- GET /health
 
-Current logic source:
-- `load_pipe(...)`
-- `generate_image(...)`
-- route handlers in `main.py` for single and batch generation
+### Auth
+- POST /auth/signup
+- POST /auth/login
+- POST /auth/password-reset
 
-Future provider adapters:
-- `provider=local` (current)
-- `provider=hf` (recommended free-first cloud)
+### Cases
+- POST /cases/create
+- GET /cases/list
+- GET /cases/{case_id}
 
-### 4) Forensic Post-Processing Service
-Responsibilities:
-- Mark overlays (scars, moles, cap, mask)
-- Face-shape outline and deterministic sketch refinements
-- Optional inpainting/morphing refinement when explicitly requested
+### Sketch
+- POST /sketch/generate
 
-Current logic source:
-- `_finalize_sketch_from_portrait(...)`
-- `_apply_face_shape_outline(...)`
-- `_apply_requested_marks_to_sketch(...)`
-- `/generate-forensic-api` path
+### Refinement
+- POST /refine/add
 
-### 5) Storage Service Layer
-Responsibilities:
-- Unified read/write abstraction for local disk and S3
-- Public/private URL generation policy
-- Migration-safe image retrieval
+## Request and Workflow Model
 
-Current signals in code:
-- `USE_S3`, `S3_BUCKET`, `AWS_REGION`, `S3_PREFIX`, `S3_ENDPOINT_URL`
-- `write_image_pair(...)`, `read_image_bytes(...)`
+### Base Sketch Workflow
+1. User logs in.
+2. User creates or selects a case.
+3. User submits suspect description.
+4. Backend generates sketch image.
+5. Image is uploaded to Supabase Storage.
+6. Sketch metadata is written to sketches table.
+7. Frontend displays current sketch and history.
 
-## Service-to-Service Flow
+### Refinement Workflow
+1. User selects Add Refinement.
+2. User chooses type and enters description.
+3. Optional coordinates are provided from UI marker.
+4. Backend stores refinement in refinements table.
+5. Backend regenerates refined sketch.
+6. Refined image is uploaded and versioned.
+7. Frontend shows updated timeline with timestamp.
 
-### A. Single Sketch Generation (API)
-1. Client sends `POST /generate-image-api` with description and options.
-2. API Gateway validates request and gets attributes + prompt.
-3. Image Generation Service produces portrait/sketch.
-4. Forensic Service applies overlays/refinements.
-5. Storage Layer persists final artifacts to local folders or object storage.
-6. API Gateway returns JSON with base64 image, prompt, seed, metadata.
+## Case-Based Project Structure
 
-### B. Batch Generation
-1. Client sends `POST /generate-batch-api` with descriptions list.
-2. API Gateway creates per-item jobs (sync now, async queue later).
-3. Prompt + Generation + Forensic pipeline runs per item.
-4. Aggregated results are returned with success/error per index.
+Recommended application structure:
 
-### C. Forensic-Enhanced Flow
-1. Client sends `POST /generate-forensic-api` with marks/quality/emphasis.
-2. Prompt Service applies forensic emphasis.
-3. Generation Service creates base portrait.
-4. Forensic Service applies requested marks and sketch conversion.
-5. Response includes `marks_applied` and forensic detail metadata.
+project-root/
+- backend/
+  - edge_api/
+    - app.py
+  - adapters/
+    - provider_hf.py
+    - llm_groq.py
+  - services/
+    - auth/
+    - database/
+    - generation/
+    - forensic/
+    - storage/
+  - schemas/
+  - tests/
+- frontend/
+  - streamlit_app.py
+- configs/
+  - settings.example.env
+- data/
+  - temp/
 
-## Data Contracts (Recommended)
+Notes:
+- Local image folders are no longer authoritative.
+- Optional local temp files can be used during processing and then removed after upload.
 
-### Generate Request (normalized)
-```json
-{
-  "description": "male, round face, scar on left cheek",
-  "mode": "pencil",
-  "model": "sd1.5",
-  "steps": 20,
-  "guidance": 7.5,
-  "width": 512,
-  "height": 512,
-  "seed": 12345,
-  "marks": ["scar_cheek"],
-  "refine_shape": false
-}
-```
+## Security and Access Control
+- Bearer token required for all non-health endpoints.
+- Case ownership checks enforced on every read/write action.
+- No direct unauthenticated access to case assets.
+- Store all secrets only in environment variables.
+- Never expose service role keys to frontend.
 
-### Generate Response (normalized)
-```json
-{
-  "success": true,
-  "image": {
-    "sketch_base64": "...",
-    "portrait_base64": "..."
-  },
-  "prompt": {
-    "positive": "...",
-    "negative": "..."
-  },
-  "meta": {
-    "seed": 12345,
-    "provider": "local",
-    "model": "sd1.5",
-    "latency_ms": 0
-  }
-}
-```
+## Environment Configuration
 
-## Deployment Topology
+Required backend variables:
+- SUPABASE_URL
+- SUPABASE_ANON_KEY
+- SUPABASE_SERVICE_ROLE_KEY
+- SUPABASE_JWT_SECRET
+- HF_TOKEN
+- GROQ_API_KEY (optional)
+- PENCIL_ONLY
 
-### Stage 1 (Current-Compatible)
-- Single Flask process, modularized internally as service layers.
-- Fastest path with minimal rewrite.
+Required frontend variable:
+- BACKEND_URL
 
-### Stage 2 (Microservices)
-- Split into deployable services:
-  - `edge-api`
-  - `prompt-service`
-  - `generation-service`
-  - `forensic-service`
-- Add queue (`Redis + RQ/Celery`) for batch and expensive tasks.
+## Deployment Topology (Render)
 
-### Stage 3 (Cloud API Provider)
-- Keep same contracts, replace generation adapter to Hugging Face API.
-- Optional Groq adapter only for prompt cleanup/normalization.
+### Backend Service (Flask)
+- Deploy from repo
+- Start command: python -m backend.edge_api.app
+- Add backend environment variables in Render dashboard
+
+### Frontend Service (Streamlit)
+- Deploy from repo
+- Start command: streamlit run frontend/streamlit_app.py --server.port $PORT --server.address 0.0.0.0
+- Set BACKEND_URL to deployed backend URL
 
 ## Reliability and Observability
-- Use request IDs end-to-end.
-- Log prompt hash, not raw sensitive witness text where possible.
-- Add retries/backoff for provider calls.
-- Add health endpoints:
-  - `/health/live`
-  - `/health/ready`
-- Add metrics:
-  - generation latency
-  - provider errors
-  - queue depth
-  - cache hit rate
+- Add request IDs for end-to-end tracing
+- Log prompt hash instead of raw sensitive text where possible
+- Handle retries and backoff for provider failures
+- Return structured error responses
 
-## Security
-- Keep all tokens server-side (`HF_TOKEN`, optional `GROQ_API_KEY`, AWS keys).
-- Validate and cap input sizes (`steps`, image dimensions, description length).
-- Add simple IP-based rate limits at edge API.
-- Avoid returning internal stack traces in API errors.
-
-## Recommended Folder Target (Incremental)
-```
-backend/
-  edge_api/
-    app.py
-  services/
-    prompt/
-    generation/
-    forensic/
-    storage/
-  adapters/
-    provider_local.py
-    provider_hf.py
-    llm_groq.py
-  schemas/
-  tests/
-frontend/
-  streamlit_app.py
-configs/
-  settings.example.env
-data/
-  images/
-  temp/
-scripts/
-docs/
-```
-
-## uv-based Python Environment Workflow
-Use uv for both env and package installs (no pip direct usage):
-
-```powershell
-uv venv .venv
-.\.venv\Scripts\Activate.ps1
-uv pip install -r requirements.txt
-```
-
-If `uv` is not available on PATH on Windows, use the module form:
-
-```powershell
-.\.venv\Scripts\python.exe -m uv --version
-.\.venv\Scripts\python.exe -m uv pip install -r requirements.txt
-```
-
-Optional add-ons:
-```powershell
-uv pip install flask gunicorn python-dotenv
-```
-
-Run server:
-```powershell
-python backend/edge_api/app.py
-```
-
-## Immediate Next Steps
-1. Refactor `main.py` route handlers to call service modules (no behavior change yet).
-2. Introduce provider adapter interface and move generation behind it.
-3. Add Hugging Face provider implementation first, keeping local as fallback.
-4. Add async queue for `/generate-batch-api`.
+## Immediate Implementation Phases
+1. Add Supabase auth and JWT middleware.
+2. Add cases, sketches, refinements data services.
+3. Move image persistence to Supabase Storage.
+4. Add refinement API and versioned outputs.
+5. Update Streamlit with auth, case workspace, and refinement UI.
+6. Deploy backend and frontend on Render and run smoke tests.

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Criminal Sketch Platform</title>
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <div class="bg-orb orb-a"></div>
+  <div class="bg-orb orb-b"></div>
+  <div class="bg-grid"></div>
+
+  <main class="page">
+    <section id="auth-shell" class="card shell shell-animate">
+      <p class="eyebrow">Forensic Visual Suite</p>
+      <h1>Criminal Sketch Platform</h1>
+      <p class="sub">Authenticate to open your secured case workspace.</p>
+
+      <div class="tabs">
+        <button id="tab-login" class="tab active" type="button">Login</button>
+        <button id="tab-signup" class="tab" type="button">Signup</button>
+        <button id="tab-reset" class="tab" type="button">Reset</button>
+      </div>
+
+      <form id="login-form" class="panel active">
+        <label>Email</label>
+        <input id="login-email" type="email" required />
+        <label>Password</label>
+        <input id="login-password" type="password" required />
+        <button id="login-btn" type="submit">Login</button>
+      </form>
+
+      <form id="signup-form" class="panel">
+        <label>Email</label>
+        <input id="signup-email" type="email" required />
+        <label>Password</label>
+        <input id="signup-password" type="password" required />
+        <button id="signup-btn" type="submit">Create Account</button>
+      </form>
+
+      <form id="reset-form" class="panel">
+        <label>Email</label>
+        <input id="reset-email" type="email" required />
+        <button id="reset-btn" type="submit">Send Reset Link</button>
+      </form>
+
+      <p id="auth-message" class="message"></p>
+    </section>
+
+    <section id="app-shell" class="shell hidden">
+      <header class="topbar shell-animate">
+        <div>
+          <p class="eyebrow">Active Workspace</p>
+          <h2>Case Refinement Console</h2>
+        </div>
+        <div class="right-top">
+          <span id="user-email" class="pill"></span>
+          <button id="logout-btn" type="button">Logout</button>
+        </div>
+      </header>
+
+      <div class="workspace-grid">
+        <section class="card card-pop" style="--d: 0.04s">
+          <h3>Case Intake</h3>
+          <div class="row row-equal">
+            <input id="case-title" type="text" placeholder="Case title" />
+            <button id="create-case-btn" type="button">Create</button>
+          </div>
+          <textarea id="case-description" placeholder="Case summary and notes"></textarea>
+          <div class="row row-equal">
+            <select id="case-select"></select>
+            <button id="refresh-cases-btn" type="button">Refresh</button>
+          </div>
+          <p id="case-status" class="message"></p>
+        </section>
+
+        <section class="card card-pop" style="--d: 0.1s">
+          <h3>Witness Input</h3>
+          <textarea id="description-input" placeholder="Describe facial structure, hair, eyes, scars, marks"></textarea>
+          <div class="row row-3">
+            <button id="record-btn" type="button">Record</button>
+            <button id="stop-btn" type="button">Stop</button>
+            <button id="transcribe-btn" type="button">Transcribe</button>
+          </div>
+          <p id="voice-status" class="message"></p>
+          <button id="generate-btn" type="button">Generate Base Sketch</button>
+          <p id="generate-status" class="message"></p>
+        </section>
+
+        <section class="card card-pop" style="--d: 0.16s">
+          <h3>Refinement Controls</h3>
+          <div class="row row-equal">
+            <select id="attribute-type">
+              <option value="general">General</option>
+              <option value="eyes">Eyes</option>
+              <option value="nose">Nose</option>
+              <option value="mouth">Mouth</option>
+              <option value="jawline">Jawline</option>
+              <option value="hair">Hair</option>
+              <option value="marks">Marks</option>
+            </select>
+            <input id="refinement-note" type="text" placeholder="e.g., thinner nose bridge" />
+          </div>
+          <button id="refine-btn" type="button">Apply Refinement</button>
+          <p id="refine-status" class="message"></p>
+          <img id="result-image" alt="Generated sketch" class="result hidden" />
+          <pre id="result-meta" class="meta"></pre>
+        </section>
+
+        <section class="card card-pop timeline-card" style="--d: 0.22s">
+          <h3>Case Timeline</h3>
+          <div id="timeline" class="timeline"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden" aria-live="polite"></div>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

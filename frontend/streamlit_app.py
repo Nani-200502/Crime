@@ -1,6 +1,7 @@
 import base64
 import os
 from io import BytesIO
+from typing import Tuple
 
 import requests
 import streamlit as st
@@ -104,6 +105,121 @@ def reset_form_state() -> None:
     st.session_state["guidance"] = 7.5
 
 
+def init_auth_state() -> None:
+    if "auth_token" not in st.session_state:
+        st.session_state["auth_token"] = ""
+    if "auth_user" not in st.session_state:
+        st.session_state["auth_user"] = {}
+    if "selected_case_id" not in st.session_state:
+        st.session_state["selected_case_id"] = ""
+
+
+def auth_headers() -> dict:
+    token = (st.session_state.get("auth_token") or "").strip()
+    if not token:
+        return {}
+    return {"Authorization": f"Bearer {token}"}
+
+
+def login_user(backend_base_url: str, email: str, password: str) -> Tuple[bool, str]:
+    try:
+        response = requests.post(
+            f"{backend_base_url}/auth/login",
+            json={"email": email, "password": password},
+            timeout=60,
+        )
+        data = response.json()
+    except requests.RequestException as exc:
+        return False, f"Cannot reach backend: {exc}"
+    except ValueError:
+        return False, "Backend returned invalid JSON."
+
+    if response.status_code >= 400 or not data.get("success", False):
+        return False, data.get("error", f"HTTP {response.status_code}")
+
+    st.session_state["auth_token"] = (data.get("access_token") or "").strip()
+    st.session_state["auth_user"] = data.get("user") or {}
+    if not st.session_state["auth_token"]:
+        return False, "Login succeeded but access token was missing."
+    return True, "Logged in successfully."
+
+
+def signup_user(backend_base_url: str, email: str, password: str) -> Tuple[bool, str]:
+    try:
+        response = requests.post(
+            f"{backend_base_url}/auth/signup",
+            json={"email": email, "password": password},
+            timeout=60,
+        )
+        data = response.json()
+    except requests.RequestException as exc:
+        return False, f"Cannot reach backend: {exc}"
+    except ValueError:
+        return False, "Backend returned invalid JSON."
+
+    if response.status_code >= 400 or not data.get("success", False):
+        return False, data.get("error", f"HTTP {response.status_code}")
+    return True, "Signup request accepted. Check email if confirmation is enabled."
+
+
+def request_password_reset(backend_base_url: str, email: str) -> Tuple[bool, str]:
+    try:
+        response = requests.post(
+            f"{backend_base_url}/auth/password-reset",
+            json={"email": email},
+            timeout=60,
+        )
+        data = response.json()
+    except requests.RequestException as exc:
+        return False, f"Cannot reach backend: {exc}"
+    except ValueError:
+        return False, "Backend returned invalid JSON."
+
+    if response.status_code >= 400 or not data.get("success", False):
+        return False, data.get("error", f"HTTP {response.status_code}")
+    return True, data.get("message", "Password reset request sent.")
+
+
+def create_case(backend_base_url: str, title: str, description: str) -> Tuple[bool, str]:
+    try:
+        response = requests.post(
+            f"{backend_base_url}/cases/create",
+            json={"title": title, "description": description},
+            headers=auth_headers(),
+            timeout=60,
+        )
+        data = response.json()
+    except requests.RequestException as exc:
+        return False, f"Cannot reach backend: {exc}"
+    except ValueError:
+        return False, "Backend returned invalid JSON."
+
+    if response.status_code >= 400 or not data.get("success", False):
+        return False, data.get("error", f"HTTP {response.status_code}")
+
+    case_data = data.get("case") or {}
+    st.session_state["selected_case_id"] = case_data.get("case_id", "")
+    return True, f"Case created: {case_data.get('case_id', 'unknown')}"
+
+
+def fetch_cases(backend_base_url: str) -> Tuple[bool, list, str]:
+    try:
+        response = requests.get(
+            f"{backend_base_url}/cases/list",
+            headers=auth_headers(),
+            timeout=60,
+        )
+        data = response.json()
+    except requests.RequestException as exc:
+        return False, [], f"Cannot reach backend: {exc}"
+    except ValueError:
+        return False, [], "Backend returned invalid JSON."
+
+    if response.status_code >= 400 or not data.get("success", False):
+        return False, [], data.get("error", f"HTTP {response.status_code}")
+    return True, data.get("cases") or [], ""
+
+
 st.markdown(
     """
     <div class="hero">
@@ -125,6 +241,97 @@ with st.sidebar:
         st.rerun()
 
 backend_base_url = backend_url.strip().rstrip("/")
+init_auth_state()
+
+with st.sidebar:
+    st.divider()
+    st.markdown("**Authentication**")
+    current_user = st.session_state.get("auth_user") or {}
+    user_email = current_user.get("email", "")
+    is_logged_in = bool((st.session_state.get("auth_token") or "").strip())
+    if is_logged_in:
+        st.success(f"Signed in as {user_email or 'user'}")
+        if st.button("Logout", width="stretch"):
+            st.session_state["auth_token"] = ""
+            st.session_state["auth_user"] = {}
+            st.rerun()
+    else:
+        st.info("Sign in to use generation and voice features.")
+        tab_login, tab_signup, tab_reset = st.tabs(["Login", "Signup", "Reset"])
+        with tab_login:
+            login_email = st.text_input("Email", key="login_email")
+            login_password = st.text_input("Password", type="password", key="login_password")
+            if st.button("Login", key="login_btn", width="stretch"):
+                ok, message = login_user(backend_base_url, login_email.strip(), login_password)
+                if ok:
+                    st.success(message)
+                    st.rerun()
+                else:
+                    st.error(message)
+
+        with tab_signup:
+            signup_email = st.text_input("Email", key="signup_email")
+            signup_password = st.text_input("Password", type="password", key="signup_password")
+            if st.button("Create Account", key="signup_btn", width="stretch"):
+                ok, message = signup_user(backend_base_url, signup_email.strip(), signup_password)
+                if ok:
+                    st.success(message)
+                else:
+                    st.error(message)
+
+        with tab_reset:
+            reset_email = st.text_input("Email", key="reset_email")
+            if st.button("Send Reset Link", key="reset_btn", width="stretch"):
+                ok, message = request_password_reset(backend_base_url, reset_email.strip())
+                if ok:
+                    st.success(message)
+                else:
+                    st.error(message)
+
+with st.sidebar:
+    st.divider()
+    st.markdown("**Cases**")
+    is_logged_in = bool((st.session_state.get("auth_token") or "").strip())
+    if not is_logged_in:
+        st.caption("Login required for case workspace.")
+    else:
+        refresh_cases = st.button("Refresh Cases", key="refresh_cases", width="stretch")
+        if refresh_cases or "cached_cases" not in st.session_state:
+            ok, rows, err = fetch_cases(backend_base_url)
+            if ok:
+                st.session_state["cached_cases"] = rows
+            else:
+                st.error(err)
+                st.session_state["cached_cases"] = []
+
+        cached_cases = st.session_state.get("cached_cases") or []
+        options = [""] + [c.get("case_id", "") for c in cached_cases if c.get("case_id")]
+        current_case_id = st.session_state.get("selected_case_id", "")
+        if current_case_id not in options:
+            current_case_id = ""
+        selected_case = st.selectbox(
+            "Selected Case",
+            options=options,
+            index=options.index(current_case_id) if current_case_id in options else 0,
+            format_func=lambda v: v if v else "(none)",
+        )
+        st.session_state["selected_case_id"] = selected_case
+
+        with st.expander("Create New Case", expanded=False):
+            new_case_title = st.text_input("Case Title", key="new_case_title")
+            new_case_desc = st.text_area("Case Description", key="new_case_desc", height=80)
+            if st.button("Create Case", key="create_case_btn", width="stretch"):
+                ok, message = create_case(backend_base_url, new_case_title.strip(), new_case_desc.strip())
+                if ok:
+                    st.success(message)
+                    ok2, rows2, err2 = fetch_cases(backend_base_url)
+                    if ok2:
+                        st.session_state["cached_cases"] = rows2
+                    else:
+                        st.error(err2)
+                    st.rerun()
+                else:
+                    st.error(message)
 
 with st.container(border=True):
     st.markdown('<div class="section-title">Voice Input (Groq Speech-to-Text)</div>', unsafe_allow_html=True)
@@ -134,7 +341,9 @@ with st.container(border=True):
     voice_status = voice_col2.empty()
 
     if transcribe_clicked:
-        if audio_value is None:
+        if not (st.session_state.get("auth_token") or "").strip():
+            voice_status.warning("Please login first.")
+        elif audio_value is None:
             voice_status.warning("Please record audio first.")
         else:
             try:
@@ -145,6 +354,7 @@ with st.container(border=True):
                     response = requests.post(
                         f"{backend_base_url}/transcribe-audio-api",
                         files=files,
+                        headers=auth_headers(),
                         timeout=180,
                     )
                 data = response.json()
@@ -241,11 +451,16 @@ with right:
     result_slot = st.empty()
 
     if generate_clicked:
-        if not description:
+        if not (st.session_state.get("auth_token") or "").strip():
+            result_slot.warning("Please login first.")
+        elif not (st.session_state.get("selected_case_id") or "").strip():
+            result_slot.warning("Please select or create a case first.")
+        elif not description:
             result_slot.warning("Please fill at least one field before generating.")
         else:
             payload = {
                 "description": description,
+                "case_id": st.session_state.get("selected_case_id"),
                 "steps": int(steps),
                 "guidance": float(guidance),
                 "width": 512,
@@ -257,6 +472,7 @@ with right:
                     response = requests.post(
                         f"{backend_base_url}/generate-image-api",
                         json=payload,
+                        headers=auth_headers(),
                         timeout=180,
                     )
                 data = response.json()
@@ -286,6 +502,10 @@ with right:
                                 st.code(data.get("negative", ""))
                                 st.write("Seed:", data.get("seed", "n/a"))
                                 st.write("Saved Image:", data.get("saved_image_path", "n/a"))
+                                sketch_record = data.get("sketch_record") or {}
+                                if sketch_record:
+                                    st.write("Sketch Version:", sketch_record.get("version", "n/a"))
+                                    st.write("Sketch ID:", sketch_record.get("sketch_id", "n/a"))
     st.markdown("</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":

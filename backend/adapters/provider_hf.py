@@ -4,6 +4,7 @@ import os
 from typing import Optional
 
 from huggingface_hub import InferenceClient
+from PIL import Image
 
 
 DEFAULT_PROVIDER = os.environ.get("HF_PROVIDER", "hf-inference")
@@ -44,5 +45,39 @@ def text_to_image_base64(
 	image = text_to_image_pil(prompt=prompt, model=model, provider=provider)
 	buf = io.BytesIO()
 	image.save(buf, format="PNG")
+	return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def image_to_image_base64(
+	image_bytes: bytes,
+	prompt: str,
+	model: Optional[str] = None,
+	provider: Optional[str] = None,
+) -> str:
+	if not image_bytes:
+		raise ValueError("image_bytes is required")
+	if not (prompt or "").strip():
+		raise ValueError("prompt is required")
+
+	client = _get_client(provider=provider)
+	image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+	# Prefer a low-strength transformation to keep identity and only apply small edits.
+	try:
+		out = client.image_to_image(
+			image=image,
+			prompt=prompt.strip(),
+			model=(model or DEFAULT_MODEL),
+			strength=0.22,
+		)
+	except TypeError:
+		out = client.image_to_image(
+			image=image,
+			prompt=prompt.strip(),
+			model=(model or DEFAULT_MODEL),
+		)
+
+	buf = io.BytesIO()
+	out.save(buf, format="PNG")
 	return base64.b64encode(buf.getvalue()).decode("ascii")
 
