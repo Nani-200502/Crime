@@ -128,3 +128,55 @@ This repo includes `render.yaml` and a cloud-ready `Dockerfile` command that bin
 
 - Free plans may sleep after inactivity and have cold starts.
 - Rotate any secrets that were previously exposed in logs or commits.
+
+## Reliable Cloud Deployment (Docker on VPS)
+
+If you want maximum control and reliability, run the app on your own VPS using Docker Compose.
+
+### 1. Provision a VPS
+
+- Ubuntu 22.04+ (recommended)
+- At least 2 vCPU / 4 GB RAM
+- Open inbound ports: 22, 80, 443, and optionally 5000
+
+### 2. Install Docker
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker $USER
+```
+
+Re-login once after adding your user to the docker group.
+
+### 3. Deploy the app
+
+```bash
+git clone https://github.com/Nani-200502/Crime.git ~/crime-app
+cd ~/crime-app
+cp configs/settings.example.env .env
+# Edit .env and set real secret values
+docker compose -f docker-compose.prod.yml up --build -d
+curl http://127.0.0.1:5000/health
+```
+
+### 4. One-command updates
+
+Use the provided script on the server:
+
+```bash
+chmod +x scripts/deploy_docker_vps.sh
+APP_DIR=$HOME/crime-app BRANCH=main ./scripts/deploy_docker_vps.sh
+```
+
+### 5. Recommended hardening
+
+- Put Nginx or Caddy in front of the app for HTTPS (LetsEncrypt)
+- Keep `.env` only on the server, never in git
+- Rotate HF/Supabase/Groq secrets if previously exposed
