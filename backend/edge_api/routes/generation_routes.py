@@ -1,5 +1,6 @@
 import os
 import random
+import logging
 from datetime import datetime
 from typing import Dict, Optional
 
@@ -22,6 +23,7 @@ from backend.services.storage.supabase_storage import (
 )
 
 generation_bp = Blueprint("generation", __name__)
+LOGGER = logging.getLogger(__name__)
 
 
 def _is_true(value: str) -> bool:
@@ -223,8 +225,20 @@ def refine_add_route():
     base_description = payload["description"]
     refinement_text = payload["refinement"]
     attribute_type = payload["attribute_type"]
+    refinement_mode = payload["refinement_mode"]
+    strength = payload["strength"]
+    guidance_scale = payload["guidance_scale"]
+    num_inference_steps = payload["num_inference_steps"]
     model = (data.get("model") or os.environ.get("HF_MODEL") or "").strip() or None
     provider = (data.get("provider") or os.environ.get("HF_PROVIDER") or "").strip() or None
+
+    default_strength = float((os.environ.get("REFINE_IMG2IMG_STRENGTH") or "0.25").strip() or "0.25")
+    default_guidance = float((os.environ.get("REFINE_IMG2IMG_GUIDANCE_SCALE") or "7.0").strip() or "7.0")
+    default_steps = int((os.environ.get("REFINE_IMG2IMG_STEPS") or "30").strip() or "30")
+    retry_img2img_model = (os.environ.get("REFINE_IMG2IMG_MODEL") or "runwayml/stable-diffusion-v1-5").strip()
+    resolved_strength = strength if strength is not None else default_strength
+    resolved_guidance = guidance_scale if guidance_scale is not None else default_guidance
+    resolved_steps = num_inference_steps if num_inference_steps is not None else default_steps
 
     try:
         case_row = get_case(case_id=case_id, user_id=user_id)
@@ -235,9 +249,16 @@ def refine_add_route():
         return jsonify({"success": False, "error": "Case not found."}), 404
 
     refined_prompt = (
-        f"{base_description}. Keep the same identity and all existing facial features. "
-        f"Apply only this minor refinement: {refinement_text}. "
-        "Do not redesign the face."
+        "Preserve the same person and facial identity from the input image. "
+        f"Apply only this refinement: {refinement_text}. "
+        "Do not change unrelated facial features, pose, or composition."
+    )
+    if base_description:
+        refined_prompt = f"{refined_prompt} Context: {base_description}."
+
+    negative_prompt = (
+        "different person, different face, changed identity, different ethnicity, different age, "
+        "face redesign, new hairstyle, strong pose change"
     )
 
     x_coord = payload["x_coord"]
@@ -245,8 +266,11 @@ def refine_add_route():
 
     try:
         generation = None
+        fallback_used = False
+        fallback_reason = ""
+        resolved_mode = "img2img"
         latest_sketches = list_case_sketches(case_id=case_id)
-        if latest_sketches:
+        if refinement_mode == "img2img" and latest_sketches:
             latest_path = (latest_sketches[0].get("image_url") or "").strip()
             if latest_path:
                 try:
@@ -256,16 +280,60 @@ def refine_add_route():
                         prompt=refined_prompt,
                         model=model,
                         provider=provider,
+                        strength=resolved_strength,
+                        guidance_scale=resolved_guidance,
+                        num_inference_steps=resolved_steps,
+                        negative_prompt=negative_prompt,
                     )
                     generation = {
                         "sketch_b64": refined_b64,
                         "final_prompt": refined_prompt,
                         "pencil_only": _is_true(os.environ.get("PENCIL_ONLY", "true")),
                     }
-                except Exception:
-                    generation = None
+                except Exception as exc:
+                    # Retry once with a refinement-safe fallback model before text2img fallback.
+                    try:
+                        LOGGER.warning(
+                            "refine_img2img_failed_retrying case_id=%s reason=%s retry_model=%s",
+                            case_id,
+                            type(exc).__name__,
+                            retry_img2img_model,
+                        )
+                        refined_b64 = image_to_image_base64(
+                            image_bytes=source_image_bytes,
+                            prompt=refined_prompt,
+                            model=retry_img2img_model,
+                            provider=provider,
+                            strength=resolved_strength,
+                            guidance_scale=resolved_guidance,
+                            num_inference_steps=resolved_steps,
+                            negative_prompt=negative_prompt,
+                        )
+                        generation = {
+                            "sketch_b64": refined_b64,
+                            "final_prompt": refined_prompt,
+                            "pencil_only": _is_true(os.environ.get("PENCIL_ONLY", "true")),
+                        }
+                    except Exception as retry_exc:
+                        fallback_used = True
+                        detail = str(retry_exc).strip()[:180]
+                        fallback_reason = f"img2img_failed:{type(retry_exc).__name__}:{detail}"
+                        LOGGER.warning(
+                            "refine_img2img_failed case_id=%s reason=%s detail=%s",
+                            case_id,
+                            type(retry_exc).__name__,
+                            detail,
+                        )
+                        generation = None
+            else:
+                fallback_used = True
+                fallback_reason = "latest_sketch_path_missing"
+        elif refinement_mode == "img2img":
+            fallback_used = True
+            fallback_reason = "latest_sketch_missing"
 
         if generation is None:
+            resolved_mode = "text2img"
             generation = _resolve_image_generation(description=refined_prompt, model=model, provider=provider)
 
         version = _next_case_version(case_id)
@@ -292,6 +360,14 @@ def refine_add_route():
     )
     response["case"] = case_row
     response["refinement_record"] = refinement_record
+    response["refinement_mode"] = resolved_mode
+    response["fallback_used"] = fallback_used
+    response["fallback_reason"] = fallback_reason
+    response["img2img"] = {
+        "strength": resolved_strength,
+        "guidance_scale": resolved_guidance,
+        "num_inference_steps": resolved_steps,
+    }
     return jsonify(response)
 
 

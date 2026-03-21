@@ -53,6 +53,10 @@ def image_to_image_base64(
 	prompt: str,
 	model: Optional[str] = None,
 	provider: Optional[str] = None,
+	strength: Optional[float] = None,
+	guidance_scale: Optional[float] = None,
+	num_inference_steps: Optional[int] = None,
+	negative_prompt: Optional[str] = None,
 ) -> str:
 	if not image_bytes:
 		raise ValueError("image_bytes is required")
@@ -61,21 +65,26 @@ def image_to_image_base64(
 
 	client = _get_client(provider=provider)
 	image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+	kwargs = {
+		"image": image,
+		"prompt": prompt.strip(),
+		"model": (model or DEFAULT_MODEL),
+	}
+	if strength is not None:
+		kwargs["strength"] = float(strength)
+	if guidance_scale is not None:
+		kwargs["guidance_scale"] = float(guidance_scale)
+	if num_inference_steps is not None:
+		kwargs["num_inference_steps"] = int(num_inference_steps)
+	if (negative_prompt or "").strip():
+		kwargs["negative_prompt"] = negative_prompt.strip()
 
 	# Prefer a low-strength transformation to keep identity and only apply small edits.
 	try:
-		out = client.image_to_image(
-			image=image,
-			prompt=prompt.strip(),
-			model=(model or DEFAULT_MODEL),
-			strength=0.22,
-		)
-	except TypeError:
-		out = client.image_to_image(
-			image=image,
-			prompt=prompt.strip(),
-			model=(model or DEFAULT_MODEL),
-		)
+		out = client.image_to_image(**kwargs)
+	except (TypeError, ValueError):
+		# Some providers reject PIL image input and/or optional parameters; retry with minimal byte-based input.
+		out = client.image_to_image(image=image_bytes, prompt=prompt.strip(), model=(model or DEFAULT_MODEL))
 
 	buf = io.BytesIO()
 	out.save(buf, format="PNG")

@@ -8,10 +8,11 @@ import Signup from "./pages/Signup";
 import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./pages/Dashboard";
 import CreateCase from "./pages/CreateCase";
+import ImageGallery from "./pages/ImageGallery";
+import CaseManagement from "./pages/CaseManagement";
 import Workspace from "./pages/Workspace";
 import AppLayout from "./components/AppLayout";
 import NotFound from "./pages/NotFound";
-import { appRoutes } from "./lib/routes";
 
 const queryClient = new QueryClient();
 
@@ -22,13 +23,15 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path={appRoutes.login} element={<Login />} />
-          <Route path={appRoutes.signup} element={<Signup />} />
-          <Route path={appRoutes.resetPassword} element={<ResetPassword />} />
+          <Route path="/" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route element={<AppLayout />}>
-            <Route path={appRoutes.dashboard} element={<Dashboard />} />
-            <Route path={appRoutes.createCase} element={<CreateCase />} />
-            <Route path={appRoutes.workspace} element={<Workspace />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/workspace" element={<Workspace />} />
+            <Route path="/create-case" element={<CreateCase />} />
+            <Route path="/image-gallery" element={<ImageGallery />} />
+            <Route path="/case-management" element={<CaseManagement />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

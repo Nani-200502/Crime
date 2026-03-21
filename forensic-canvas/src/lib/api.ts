@@ -20,15 +20,31 @@ export type SketchMutationResponse = {
   signed_image_url?: string;
   image_url?: string;
   version?: number;
+  refinement_mode?: string;
+  fallback_used?: boolean;
+  fallback_reason?: string;
+  img2img?: {
+    strength?: number;
+    guidance_scale?: number;
+    num_inference_steps?: number;
+  };
 };
 
 export type TimelineResponse = {
-  timeline?: unknown[];
-  sketches?: Array<{ signed_image_url?: string }>;
+  timeline?: Array<{
+    event_type?: string;
+    payload?: {
+      signed_image_url?: string;
+      image_url?: string;
+      created_at?: string;
+    };
+  }>;
+  sketches?: Array<{ signed_image_url?: string; image_url?: string }>;
 };
 
 export const ACCESS_TOKEN_KEY = "access_token";
 export const USER_EMAIL_KEY = "user_email";
+export const CURRENT_CASE_ID_KEY = "current_case_id";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").trim();
 
@@ -122,11 +138,20 @@ export function currentUserEmail(): string {
 export function clearSession() {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(USER_EMAIL_KEY);
+  localStorage.removeItem(CURRENT_CASE_ID_KEY);
 }
 
 export function setSession(accessToken: string, user?: SessionUser) {
   localStorage.setItem(ACCESS_TOKEN_KEY, accessToken || "");
   localStorage.setItem(USER_EMAIL_KEY, user?.email || "");
+}
+
+export function getCurrentCaseId(): string {
+  return (localStorage.getItem(CURRENT_CASE_ID_KEY) || "").trim();
+}
+
+export function setCurrentCaseId(caseId: string) {
+  localStorage.setItem(CURRENT_CASE_ID_KEY, (caseId || "").trim());
 }
 
 export async function login(email: string, password: string) {
@@ -173,10 +198,10 @@ export async function getCase(caseId: string): Promise<CaseRecord> {
   return data.case as CaseRecord;
 }
 
-export async function generateSketch(caseId: string, description: string): Promise<SketchMutationResponse> {
+export async function generateSketch(caseId: string, description: string, model?: string): Promise<SketchMutationResponse> {
   return apiRequest("/sketch/generate", {
     method: "POST",
-    body: { case_id: caseId, description },
+    body: { case_id: caseId, description, model: model || undefined },
     authenticated: true,
   });
 }
@@ -188,16 +213,21 @@ export async function addRefinement(input: {
   attributeType: string;
   xCoord?: string;
   yCoord?: string;
+  strength?: number;
+  guidanceScale?: number;
 }): Promise<SketchMutationResponse> {
   const payload: any = {
     case_id: input.caseId,
     description: input.description,
     refinement: input.refinement,
     attribute_type: input.attributeType,
+    refinement_mode: "img2img",
   };
 
   if ((input.xCoord || "").trim()) payload.x_coord = Number(input.xCoord);
   if ((input.yCoord || "").trim()) payload.y_coord = Number(input.yCoord);
+  if (typeof input.strength === "number") payload.strength = input.strength;
+  if (typeof input.guidanceScale === "number") payload.guidance_scale = input.guidanceScale;
 
   return apiRequest("/refine/add", {
     method: "POST",
@@ -210,32 +240,4 @@ export async function getTimeline(caseId: string): Promise<TimelineResponse> {
   return apiRequest(`/cases/${encodeURIComponent(caseId)}/timeline`, {
     authenticated: true,
   });
-}
-
-export async function transcribeAudio(audioBlob: Blob): Promise<{ text: string; model?: string }> {
-  const formData = new FormData();
-  formData.append("audio", audioBlob, "recording.webm");
-
-  const response = await fetch(toApiUrl("/transcribe-audio-api"), {
-    method: "POST",
-    headers: { ...authHeaders() },
-    body: formData,
-  });
-
-  const data = await parseJsonSafe(response);
-  if (!response.ok || !data.success) {
-    const err = asApiError(response.status, data);
-    if (response.status === 401) {
-      clearSession();
-      if (typeof window !== "undefined" && window.location.pathname !== "/") {
-        window.location.assign("/");
-      }
-    }
-    throw err;
-  }
-
-  return {
-    text: String(data.text || ""),
-    model: data.model,
-  };
 }

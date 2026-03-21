@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.*
+node_modules
+forensic-canvas/node_modules
+forensic-canvas/dist
+data/images/*.png
+data/temp/*.json
+.vscode

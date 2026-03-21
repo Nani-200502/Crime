@@ -73,3 +73,30 @@ Run deployment smoke checks:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\deployment_smoke_check.ps1
 ```
+
+## Docker Deployment (Easy)
+
+Run with one command on Windows:
+
+```powershell
+./start_docker.bat
+```
+
+Or with docker compose directly:
+
+```powershell
+docker compose up --build -d
+```
+
+Open:
+
+```text
+http://127.0.0.1:5000
+```
+
+Useful docker commands:
+
+```powershell
+docker compose logs -f
+docker compose down
+```
