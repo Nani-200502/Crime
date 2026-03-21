@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: criminal-sketch-app
+    env: docker
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    healthCheckPath: /health
+    plan: free

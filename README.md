@@ -100,3 +100,31 @@ Useful docker commands:
 docker compose logs -f
 docker compose down
 ```
+
+## Easiest Cloud Deployment (Render)
+
+This repo includes `render.yaml` and a cloud-ready `Dockerfile` command that binds to Render's dynamic `PORT`.
+
+### Quick steps
+
+1. Push your latest code to GitHub.
+2. Go to Render dashboard and click **New +** -> **Blueprint**.
+3. Connect your GitHub repository.
+4. Render will detect `render.yaml` and create the web service.
+5. In Render service settings, add required environment variables from your local `.env`:
+	- `HF_TOKEN`
+	- `GROQ_API_KEY`
+	- `SUPABASE_URL`
+	- `SUPABASE_DB_URL`
+	- `SUPABASE_ANON_KEY`
+	- `SUPABASE_SERVICE_ROLE_KEY`
+	- `SUPABASE_JWT_SECRET`
+	- `SUPABASE_STORAGE_BUCKET`
+	- `SUPABASE_SIGNED_URL_TTL_SECONDS`
+	- `PENCIL_ONLY`
+6. Deploy. Render checks `/health` automatically.
+
+### Notes
+
+- Free plans may sleep after inactivity and have cold starts.
+- Rotate any secrets that were previously exposed in logs or commits.

@@ -29,4 +29,4 @@ COPY forensic-canvas/ ./forensic-canvas/
 COPY --from=frontend-builder /app/forensic-canvas/dist ./forensic-canvas/dist
 
 EXPOSE 5000
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "backend.edge_api.app:app", "--workers", "2", "--threads", "4", "--timeout", "120"]
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} backend.edge_api.app:app --workers 2 --threads 4 --timeout 120"]
