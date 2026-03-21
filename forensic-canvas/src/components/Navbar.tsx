@@ -14,7 +14,7 @@ export default function Navbar() {
       <div className="flex items-center gap-3">
         <Shield className="h-5 w-5 text-primary" />
         <span className="font-semibold text-foreground tracking-tight text-sm">
-          AI FORENSIC SYSTEM
+          AI CRIMINAL SKETCH GENERATOR
         </span>
         <span className="font-mono-data text-[10px] text-muted-foreground ml-1">v4.2</span>
       </div>

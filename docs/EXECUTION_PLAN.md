@@ -1,4 +1,4 @@
-# Criminal Sketch Platform - Next Execution Plan
+# AI CRIMINAL SKETCH GENERATOR - Next Execution Plan
 
 ## Current Status Summary
 

@@ -1,4 +1,4 @@
-# Criminal Sketch Generator
+# AI CRIMINAL SKETCH GENERATOR
 
 ## Flask Auth-First Web App
 

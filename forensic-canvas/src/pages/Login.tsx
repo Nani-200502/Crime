@@ -59,7 +59,7 @@ export default function Login() {
           >
             <Shield className="h-6 w-6 text-primary" />
           </motion.div>
-          <span className="font-semibold text-lg text-foreground tracking-tight">AI FORENSIC SYSTEM</span>
+          <span className="font-semibold text-lg text-foreground tracking-tight">AI CRIMINAL SKETCH GENERATOR</span>
         </motion.div>
 
         <motion.div

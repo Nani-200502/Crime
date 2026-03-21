@@ -1,7 +1,7 @@
-# Criminal Sketch Platform Architecture
+# AI CRIMINAL SKETCH GENERATOR Architecture
 
 ## Objective
-Build a secure, case-based criminal sketch platform using the existing Python Flask + Streamlit stack with Supabase Authentication, Supabase Database, and Supabase Storage.
+Build a secure, case-based AI CRIMINAL SKETCH GENERATOR platform using the existing Python Flask + Streamlit stack with Supabase Authentication, Supabase Database, and Supabase Storage.
 
 ## Core Principles
 - All business endpoints require authentication.

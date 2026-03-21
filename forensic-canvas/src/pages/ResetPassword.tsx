@@ -37,7 +37,7 @@ export default function ResetPassword() {
       >
         <div className="flex items-center gap-2 mb-8 justify-center">
           <Shield className="h-6 w-6 text-primary" />
-          <span className="font-semibold text-lg text-foreground tracking-tight">AI FORENSIC SYSTEM</span>
+          <span className="font-semibold text-lg text-foreground tracking-tight">AI CRIMINAL SKETCH GENERATOR</span>
         </div>
 
         <motion.div
